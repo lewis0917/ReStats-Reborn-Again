@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v7 · stable object identity on specifiers)
+// ReStats — Tweak.xm (v8 · insertSpecifier:afterSpecifier: fix)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
-// Target Class: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #import <UIKit/UIKit.h>
@@ -19,8 +18,6 @@
 @interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
 @end
-
-// ─── Preference storage ───────────────────────────────────────────────────────
 
 static NSString *const kRSSuite     = @"com.lo.restats";
 static NSString *const kRSInterval  = @"resetIntervalDays";
@@ -65,28 +62,12 @@ static BOOL RSResetOverdue(void) {
     return ([nextDue compare:NSDate.date] == NSOrderedAscending);
 }
 
-// ─── PSUICellularController hook ──────────────────────────────────────────────
-
 %hook PSUICellularController
 
-- (NSMutableArray *)specifiers {
-    NSArray *orig = %orig;
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
 
-    // PSListController calls specifiers repeatedly during scroll, cell reuse,
-    // and layout passes. Returning a new mutableCopy each time gives a different
-    // array object on every call — the group structures PSListController built
-    // on the first call are tied to the original object identity, so a different
-    // object on subsequent calls desyncs the group-to-row mapping and crashes
-    // on scroll. Once the picker is present, return the SAME object %orig hands
-    // back (which is the _specifiers ivar we wrote on the first pass) unchanged.
-    for (PSSpecifier *s in orig) {
-        if ([[s identifier] isEqualToString:@"RSIntervalPicker"]) {
-            return (NSMutableArray *)orig;
-        }
-    }
-
-    // First call only — picker not yet present. Build it and inject.
-    NSMutableArray *specs = [orig mutableCopy];
+    if ([self specifierForID:@"RSIntervalPicker"]) return;
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
@@ -110,18 +91,17 @@ static BOOL RSResetOverdue(void) {
     [picker setProperty:kRSInterval       forKey:@"key"];
     [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
 
-    [specs addObject:picker];
-
-    // Write the augmented array back to _specifiers so that on every future
-    // call, %orig returns this same object — meaning the early-return path
-    // above hands back a stable identity the group structures can rely on.
-    [self setValue:specs forKey:@"_specifiers"];
-
-    return specs;
-}
-
-- (void)viewDidAppear:(BOOL)animated {
-    %orig(animated);
+    // insertSpecifier:afterSpecifier:animated: updates BOTH _specifiers (flat)
+    // AND _specifiersByGroup (group structures the table uses for scroll).
+    // Every specifiers-getter approach failed because %orig builds group
+    // structures before returning — our injection was always after that point,
+    // leaving _specifiersByGroup out of sync with _specifiers and crashing on scroll.
+    PSSpecifier *anchor = [[self specifiers] lastObject];
+    if (anchor) {
+        [self insertSpecifier:picker afterSpecifier:anchor animated:NO];
+    } else {
+        [self addSpecifier:picker animated:NO];
+    }
 
     if (RSResetOverdue()) {
         __weak PSUICellularController *ws = self;
@@ -174,8 +154,6 @@ static BOOL RSResetOverdue(void) {
 }
 
 %end
-
-// ─── Manual reset tracker ─────────────────────────────────────────────────────
 
 %hook PSListController
 
