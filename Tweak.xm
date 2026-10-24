@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v14 · Clean Syntax & Async-Safe Injection)
+// ReStats — Tweak.xm (v15 · Haptics, Live UI Refresh & Async-Safe Injection)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +134,12 @@ static BOOL RSResetOverdue(void) {
         [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
             [RSPrefs() setInteger:days forKey:kRSInterval];
             [RSPrefs() synchronize];
+
+            // Tactile haptic feedback on selection
+            UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+            [haptic impactOccurred];
+
+            // Instantly refresh the specifier subtitle on screen
             [self reloadSpecifier:spec animated:YES];
         }]];
     }
