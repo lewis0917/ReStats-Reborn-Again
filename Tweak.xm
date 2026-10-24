@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v11 · blank-screen fix & stable pointer caching)
+// ReStats — Tweak.xm (v12 · Async-Safe Dynamic Injection & Action Sheet)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8,20 +8,14 @@
 #import <Foundation/Foundation.h>
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
-#import <objc/runtime.h>
 
 @interface PSUICellularController : PSListController
 @end
 
-#ifndef PSLinkListCell
-#define PSLinkListCell 6
-#endif
-
 @interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
+- (void)rsOpenIntervalPicker:(PSSpecifier *)spec;
 @end
-
-// ─── Preference storage ───────────────────────────────────────────────────────
 
 static NSString *const kRSSuite     = @"com.lo.restats";
 static NSString *const kRSInterval  = @"resetIntervalDays";
@@ -66,65 +60,40 @@ static BOOL RSResetOverdue(void) {
     return ([nextDue compare:NSDate.date] == NSOrderedAscending);
 }
 
-// ─── PSUICellularController hook ──────────────────────────────────────────────
-
-static const char *kRSCachedSpecifiersKey = "RSCachedSpecifiersKey";
-
 %hook PSUICellularController
 
 - (NSMutableArray *)specifiers {
-    // 1. Return cached modified array if we already built it
-    NSMutableArray *cached = objc_getAssociatedObject(self, kRSCachedSpecifiersKey);
-    if (cached) {
-        return cached;
-    }
-
-    // 2. Fetch original specifiers from super/system
-    NSArray *orig = %orig;
-
-    // DO NOT cache or freeze if the system returns empty/nil while still loading!
+    NSMutableArray *orig = %orig;
     if (!orig || orig.count == 0) {
-        return (NSMutableArray *)orig;
+        return orig;
     }
 
-    // 3. Clone array once real specifiers arrive
-    NSMutableArray *specs = [orig mutableCopy];
-
-    // 4. Check if already injected
-    for (PSSpecifier *s in specs) {
+    // Check if our picker is already injected
+    for (PSSpecifier *s in orig) {
         if ([[s identifier] isEqualToString:@"RSIntervalPicker"]) {
-            objc_setAssociatedObject(self, kRSCachedSpecifiersKey, specs, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            return specs;
+            return orig;
         }
     }
 
-    // 5. Construct PSLinkListCell picker
-    Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
+    // Async load completed but picker is missing — inject it safely into the live array
+    NSMutableArray *specs = [orig mutableCopy];
 
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
-                            set:@selector(rsSetInterval:specifier:)
-                            get:@selector(rsGetInterval:)
-                         detail:listItemsCtrl
-                           cell:(PSCellType)PSLinkListCell
+                            set:nil
+                            get:@selector(rsGetIntervalSubtitle:)
+                         detail:nil
+                           cell:2 // PSButtonCell
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
-    [picker setProperty:@[@0, @7, @14, @30, @60, @90]
-                 forKey:@"values"];
-    [picker setProperty:@[@"Disabled", @"Every 7 Days", @"Every 14 Days",
-                          @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"]
-                 forKey:@"titles"];
-    [picker setProperty:@0                forKey:@"default"];
-    [picker setProperty:kRSSuite          forKey:@"defaults"];
-    [picker setProperty:kRSInterval       forKey:@"key"];
-    [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
+    [picker setButtonAction:@selector(rsOpenIntervalPicker:)];
 
     [specs addObject:picker];
 
-    // 6. Cache ONLY when populated so pointer remains stable on all scroll passes
-    objc_setAssociatedObject(self, kRSCachedSpecifiersKey, specs, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // Update internal specifiers ivar so the controller's group map recognizes it
+    [self setValue:specs forKey:@"_specifiers"];
 
     return specs;
 }
@@ -143,15 +112,40 @@ static const char *kRSCachedSpecifiersKey = "RSCachedSpecifiersKey";
 }
 
 %new
-- (id)rsGetInterval:(PSSpecifier *)__unused spec {
-    return @(RSIntervalDays());
+- (id)rsGetIntervalSubtitle:(PSSpecifier *)__unused spec {
+    NSInteger days = RSIntervalDays();
+    if (days <= 0) return @"Disabled";
+    if (days == 30) return @"Monthly (30 Days)";
+    return [NSString stringWithFormat:@"Every %ld Days", (long)days];
 }
 
 %new
-- (void)rsSetInterval:(id)value specifier:(PSSpecifier *)spec {
-    [RSPrefs() setInteger:[value integerValue] forKey:kRSInterval];
-    [RSPrefs() synchronize];
-    [self reloadSpecifier:spec animated:YES];
+- (void)rsOpenIntervalPicker:(PSSpecifier *)spec {
+    UIAlertController *alert = [UIAlertController 
+        alertControllerWithTitle:@"Auto-Reset Interval"
+                         message:@"Choose how often to automatically reset mobile data statistics."
+                  preferredStyle:UIAlertControllerStyleActionSheet];
+
+    NSArray *titles = @[@"Disabled", @"Every 7 Days", @"Every 14 Days", @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"];
+    NSArray *values = @[@0, @7, @14, @30, @60, @90];
+
+    for (NSInteger i = 0; i < titles.count; i++) {
+        NSInteger days = [values[i] integerValue];
+        [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+            [RSPrefs() setInteger:days forKey:kRSInterval];
+            [RSPrefs() synchronize];
+            [self reloadSpecifier:spec animated:YES];
+        }]];
+    }
+
+    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+
+    if ([alert respondsToSelector:@selector(popoverPresentationController)]) {
+        alert.popoverPresentationController.sourceView = self.view;
+        alert.popoverPresentationController.sourceRect = self.view.bounds;
+    }
+
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 %new
@@ -183,8 +177,6 @@ static const char *kRSCachedSpecifiersKey = "RSCachedSpecifiersKey";
 }
 
 %end
-
-// ─── Manual reset tracker ─────────────────────────────────────────────────────
 
 %hook PSListController
 
