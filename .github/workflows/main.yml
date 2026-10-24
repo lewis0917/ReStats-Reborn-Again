@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Code
@@ -18,10 +18,12 @@ jobs:
           submodules: recursive
 
       - name: Setup Theos
-        uses: theos/action-setup@v1
+        uses: waruhachi/theos-action@v2.6.5
         with:
-          theos-src: theos/theos
-          theos-ref: master
+          theos-src: 'waruhachi/theos'
+          theos-branch: 'master'
+          sdks-src: 'waruhachi/sdks'
+          sdks-branch: 'master'
 
       - name: Build Package
         run: |
