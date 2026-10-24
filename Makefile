@@ -8,5 +8,6 @@ TWEAK_NAME = ReStats
 ReStats_FILES = Tweak.xm
 ReStats_CFLAGS = -fobjc-arc
 ReStats_PRIVATE_FRAMEWORKS = Preferences
+ReStats_LDFLAGS = -weak_framework Preferences
 
 include $(THEOS_MAKE_PATH)/tweak.mk
