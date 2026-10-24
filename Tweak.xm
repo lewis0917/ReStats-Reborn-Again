@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm
+// ReStats — Tweak.xm (Clean & Optimized)
 // Rootless rewrite: ElleKit · iOS 15–18 · arm64 + arm64e
 // Target Class: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9,7 +9,6 @@
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
 
-// Forward declare the modern cellular list controller for Logos compilation
 @interface PSUICellularController : PSListController
 @end
 
@@ -22,7 +21,7 @@
 - (void)_reStatsPerformReset;
 @end
 
-// Storage constants
+// Preference storage
 static NSString *const kRSSuite      = @"com.lo.restats";
 static NSString *const kRSInterval   = @"resetIntervalDays";    // NSInteger; 0 = disabled
 static NSString *const kRSLastReset  = @"lastResetTimestamp";   // double (POSIX epoch)
@@ -66,44 +65,17 @@ static BOOL RSResetOverdue(void) {
     return ([nextDue compare:NSDate.date] == NSOrderedAscending);
 }
 
-static BOOL RSAlreadyInjected(NSArray *specs) {
-    for (PSSpecifier *sp in specs) {
-        if ([sp respondsToSelector:@selector(identifier)] &&
-            [[sp identifier] isEqualToString:@"RSIntervalPicker"]) return YES;
-    }
-    return NO;
-}
-
-// Runtime reset-selector discovery
-static SEL RSFindResetSelector(__unsafe_unretained id target) {
-    static NSArray *candidates;
-    static dispatch_once_t _ct;
-    dispatch_once(&_ct, ^{
-        candidates = @[
-            @"resetStatistics:",
-            @"resetCellularStatistics:",
-            @"resetAllCellularStatistics:",
-            @"_resetDataCounters",
-            @"cellularResetStatistics:",
-            @"performResetStatistics"
-        ];
-    });
-    for (NSString *name in candidates) {
-        SEL s = NSSelectorFromString(name);
-        if ([target respondsToSelector:s]) return s;
-    }
-    return NULL;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Direct Hook on PSUICellularController
+// Dynamic Hooking on PSUICellularController
 // ─────────────────────────────────────────────────────────────────────────────
 
 %hook PSUICellularController
 
-- (NSArray *)specifiers {
-    NSArray *orig = %orig;
-    if (RSAlreadyInjected(orig)) return orig;
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
+
+    // Prevent duplicate row injection if already present
+    if ([self specifierForID:@"RSIntervalPicker"] != nil) return;
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
@@ -121,17 +93,22 @@ static SEL RSFindResetSelector(__unsafe_unretained id target) {
     NSArray *values = @[@0, @7, @14, @30, @60, @90];
     NSArray *titles = @[@"Disabled", @"Every 7 Days", @"Every 14 Days", @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"];
 
-    [picker setProperty:values forKey:@"validTitles"];
     [picker setProperty:values forKey:@"values"];
     [picker setProperty:titles forKey:@"titles"];
     [picker setProperty:@0 forKey:@"default"];
-    [picker setProperty:kRSSuite forKey:@"defaults"];
-    [picker setProperty:kRSInterval forKey:@"key"];
 
-    NSMutableArray *mut = [orig mutableCopy];
-    NSUInteger insertAt = (mut.count > 1) ? (mut.count - 1) : mut.count;
-    [mut insertObject:picker atIndex:insertAt];
-    return [mut copy];
+    // Dynamically insert into the onscreen table view safely
+    [self addSpecifier:picker animated:YES];
+
+    // Trigger reset evaluation if overdue
+    if (RSResetOverdue()) {
+        __weak PSUICellularController *ws = self;
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, 600 * NSEC_PER_MSEC),
+            dispatch_get_main_queue(),
+            ^{ [ws _reStatsPerformReset]; }
+        );
+    }
 }
 
 %new
@@ -145,43 +122,22 @@ static SEL RSFindResetSelector(__unsafe_unretained id target) {
     [RSPrefs() synchronize];
 }
 
-- (void)viewWillAppear:(BOOL)animated {
-    %orig;
-
-    if (!RSResetOverdue()) return;
-
-    __weak PSUICellularController *ws = self;
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 600 * NSEC_PER_MSEC),
-        dispatch_get_main_queue(),
-        ^{ [ws _reStatsPerformReset]; }
-    );
-}
-
 %new
 - (void)_reStatsPerformReset {
-    SEL resetSel = RSFindResetSelector(self);
-
-    if (resetSel) {
+    NSArray *candidates = @[
+        @"resetStatistics:",
+        @"resetCellularStatistics:",
+        @"_resetDataCounters",
+        @"cellularResetStatistics:",
+        @"performResetStatistics"
+    ];
+    
+    for (NSString *name in candidates) {
+        SEL s = NSSelectorFromString(name);
+        if (![self respondsToSelector:s]) continue;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [self performSelector:resetSel withObject:nil];
-#pragma clang diagnostic pop
-        RSRecordReset();
-        return;
-    }
-
-    for (PSSpecifier *sp in [self specifiers]) {
-        if (![sp respondsToSelector:@selector(identifier)]) continue;
-        NSString *ident = [(id)sp identifier] ?: @"";
-        if (![ident.lowercaseString containsString:@"reset"]) continue;
-
-        SEL action = sp.buttonAction;
-        if (!action || ![self respondsToSelector:action]) continue;
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [self performSelector:action withObject:sp];
+        [self performSelector:s withObject:nil];
 #pragma clang diagnostic pop
         RSRecordReset();
         return;
