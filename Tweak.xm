@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v16 · PSLinkCell Detail Subtitle & Live Reload)
+// ReStats — Tweak.xm (v17 · Enabled PSLinkCell & Tap Interception)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,10 +75,9 @@ static BOOL RSResetOverdue(void) {
         }
     }
 
-    // Async load completed but picker is missing — inject it safely into the live array
     NSMutableArray *specs = [orig mutableCopy];
 
-    // PSLinkCell (cell:1) displays the right-side detail text returned by rsGetIntervalSubtitle:
+    // PSLinkCell with target + getter ensures the row remains enabled and displays subtitle
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
@@ -89,14 +88,23 @@ static BOOL RSResetOverdue(void) {
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
-    [picker setButtonAction:@selector(rsOpenIntervalPicker:)];
+    [picker setProperty:@YES forKey:@"enabled"];
 
     [specs addObject:picker];
 
-    // Update internal specifiers ivar so the controller's group map recognizes it
     [self setValue:specs forKey:@"_specifiers"];
 
     return specs;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    PSSpecifier *spec = [self specifierAtIndexPath:indexPath];
+    if ([[spec identifier] isEqualToString:@"RSIntervalPicker"]) {
+        [tableView deselectRowAtIndexPath:indexPath animated:YES];
+        [self rsOpenIntervalPicker:spec];
+        return;
+    }
+    %orig(tableView, indexPath);
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -136,11 +144,9 @@ static BOOL RSResetOverdue(void) {
             [RSPrefs() setInteger:days forKey:kRSInterval];
             [RSPrefs() synchronize];
 
-            // Tactile haptic feedback on selection
             UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
             [haptic impactOccurred];
 
-            // Refresh specifier so the detail text (PSLinkCell) updates immediately
             [self reloadSpecifier:spec animated:YES];
         }]];
     }
