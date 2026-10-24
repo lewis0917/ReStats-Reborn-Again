@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v17 · Enabled PSLinkCell & Tap Interception)
+// ReStats — Tweak.xm (v18 · PSTitleValueCell Live Subtitle Display)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,14 +77,14 @@ static BOOL RSResetOverdue(void) {
 
     NSMutableArray *specs = [orig mutableCopy];
 
-    // PSLinkCell with target + getter ensures the row remains enabled and displays subtitle
+    // PSTitleValueCell displays the title on the left and the value from 'get:' on the right
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
                             set:nil
                             get:@selector(rsGetIntervalSubtitle:)
                          detail:nil
-                           cell:(PSCellType)PSLinkCell
+                           cell:(PSCellType)PSTitleValueCell
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
