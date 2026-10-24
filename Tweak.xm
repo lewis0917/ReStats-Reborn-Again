@@ -73,12 +73,11 @@ static BOOL RSResetOverdue(void) {
 // addSpecifier:animated: in viewDidAppear: commits the specifier AFTER the table
 // has already cached its row count, causing a desync that crashes on scroll reuse.
 - (NSMutableArray *)specifiers {
-    // mutableCopy here because %orig returns an immutable NSArray in practice —
-    // the NSMutableArray * return type in the hook signature is a lie the compiler
-    // accepts silently. Calling addObject: on the raw %orig result throws
-    // NSInvalidArgumentException (__NSArrayI addObject: unrecognized selector).
-    NSMutableArray *specs = [%orig mutableCopy];
-    if (!specs) return specs;
+    // %orig must be captured standalone — Logos macro expansion breaks when
+    // nested directly inside a method call like [%orig mutableCopy].
+    NSArray *original = %orig;
+    NSMutableArray *specs = [original mutableCopy];
+    if (!specs) return nil;
 
     for (PSSpecifier *s in specs) {
         if ([[s identifier] isEqualToString:@"RSIntervalPicker"]) return specs;
