@@ -19,20 +19,15 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install lz4 xz
+          brew install ldid xz
 
-      - name: Checkout Theos
+      - name: Checkout Theos & SDKs
         run: |
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          rm -rf $HOME/theos/sdks
           git clone --recursive https://github.com/theos/sdks.git $HOME/theos/sdks
 
       - name: Build Package
         run: |
           export THEOS=$HOME/theos
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless TARGET=iphoneos:clang:latest:15.0
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReStats-Debian-Package
-          path: packages/*.deb
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:latest:15.0
