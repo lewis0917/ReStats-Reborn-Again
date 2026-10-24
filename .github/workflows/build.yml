@@ -1,36 +1,38 @@
-name: Build Package
+name: Build ReStats
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ master, main ]
-  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          fetch-depth: 1
 
-      - name: Install Dependencies
-        run: |
-          brew install ldid xz
+      - name: Cache Theos Framework
+        uses: actions/cache@v4
+        with:
+          path: ~/theos
+          key: ${{ runner.os }}-theos-v1
 
-      - name: Checkout Theos & SDKs
+      - name: Setup Theos
         run: |
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          rm -rf $HOME/theos/sdks
-          git clone --recursive https://github.com/theos/sdks.git $HOME/theos/sdks
+          if [ ! -d "$HOME/theos" ]; then
+            git clone --recursive https://github.com/theos/theos.git ~/theos
+          fi
 
       - name: Build Package
+        env:
+          THEOS: ${{ runner.os }}/theos
+          MAKEFLAGS: "-j4"
         run: |
-          export THEOS=$HOME/theos
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:latest:15.0
+          make package FINALPACKAGE=1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
