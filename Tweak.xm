@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v3 · Reviewed & Patched)
+// ReStats — Tweak.xm (v4 · cellClass Fix)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -15,8 +15,8 @@
 #define PSLinkListCell 6
 #endif
 
-// Forward declaration scoped correctly — method lives on PSUICellularController,
-// not PSListController. Declaring on the actual subclass avoids misleading callers.
+// Forward declaration scoped to the actual subclass — _reStatsPerformReset
+// lives on PSUICellularController, not PSListController.
 @interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
 @end
@@ -77,13 +77,16 @@ static BOOL RSResetOverdue(void) {
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
-    PSSpecifier *picker = [%c(PSSpecifier)
+    // NSClassFromString is safer than %c() here — resolves gracefully if the
+    // class image hasn't been mapped yet at hook time. Same caveat applies to
+    // PSListItemsController above.
+    PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
                             set:@selector(rsSetInterval:specifier:)
                             get:@selector(rsGetInterval:)
                          detail:listItemsCtrl
-                           cell:(PSCellType)PSLinkListCell
+                           cell:6   // PSLinkListCell — forced as raw integer
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
@@ -93,11 +96,16 @@ static BOOL RSResetOverdue(void) {
     [picker setProperty:@[@"Disabled", @"Every 7 Days", @"Every 14 Days",
                           @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"]
                  forKey:@"titles"];
-    [picker setProperty:@0       forKey:@"default"];
-    // PSListItemsController reads these two to persist and display selection state.
-    // "defaultsDomain" is not a documented PSSpecifier key — "defaults" covers the domain.
+    [picker setProperty:@0          forKey:@"default"];
+
+    // PSListItemsController reads these to persist and restore selection state.
     [picker setProperty:kRSSuite    forKey:@"defaults"];
     [picker setProperty:kRSInterval forKey:@"key"];
+
+    // The Preferences framework resolves the cell class from this string key
+    // before it reads the cell type integer — without it the integer is ignored
+    // and the framework falls back to PSToggleSwitchCell (confirmed by screenshot).
+    [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
 
     [self addSpecifier:picker animated:NO];
 
@@ -129,8 +137,8 @@ static BOOL RSResetOverdue(void) {
         @"resetStatistics:",
         @"resetCellularStatistics:",
         @"cellularResetStatistics:",
-        @"_resetDataCounters",       // no-arg
-        @"performResetStatistics"    // no-arg
+        @"_resetDataCounters",      // no-arg — branch below handles the call form
+        @"performResetStatistics"   // no-arg
     ];
 
     for (NSString *name in candidates) {
@@ -140,8 +148,8 @@ static BOOL RSResetOverdue(void) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
         // Selectors without a trailing colon take zero arguments.
-        // Passing nil via performSelector:withObject: pushes a value into x2
-        // that the callee never reads — UB-adjacent on arm64. Branch on colon.
+        // Calling performSelector:withObject: on a zero-arg IMP pushes a value
+        // into x2 the callee never reads — UB-adjacent on arm64.
         if ([name hasSuffix:@":"]) {
             [self performSelector:s withObject:nil];
         } else {
@@ -157,9 +165,9 @@ static BOOL RSResetOverdue(void) {
 %end
 
 // ─── Manual reset tracker ─────────────────────────────────────────────────────
-// Hooks PSListController because resetStatistics: may be defined there and called
-// polymorphically — but guards on isKindOfClass: so unrelated Settings panes
-// (network reset, privacy reset, etc.) don't stamp a cellular timestamp.
+// Hooks at PSListController level because resetStatistics: may be dispatched
+// polymorphically from that base, but guards on isKindOfClass: so unrelated
+// Settings panes don't stamp a cellular timestamp on their own resets.
 
 %hook PSListController
 
