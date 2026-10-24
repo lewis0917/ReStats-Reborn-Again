@@ -18,11 +18,6 @@
 - (void)_reStatsPerformReset;
 @end
 
-@interface PSSpecifier (RSSubscript)
-- (id)objectForKeyedSubscript:(NSString *)key;
-- (void)setObject:(id)obj forKeyedSubscript:(NSString *)key;
-@end
-
 // Preference key constants
 extern NSString *const PSValuesKey;
 extern NSString *const PSTitlesKey;
@@ -77,8 +72,10 @@ static BOOL RSResetOverdue(void) {
 
 // Context detection
 static BOOL RSIsCellularController(__unsafe_unretained PSListController *ctrl) {
+    if (!ctrl) return NO;
+    
     NSString *cn = NSStringFromClass([ctrl class]);
-    if ([cn containsString:@"Cellular"] || [cn containsString:@"DataUsage"]) return YES;
+    if ([cn containsString:@"Cellular"] || [cn containsString:@"DataUsage"] || [cn containsString:@"PSCellular"]) return YES;
 
     NSString *bid = [NSBundle bundleForClass:[ctrl class]].bundleIdentifier;
     if ([[bid lowercaseString] containsString:@"cellular"]) return YES;
@@ -140,21 +137,27 @@ static BOOL RSAlreadyInjected(NSArray *specs) {
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
-        PSSpecifier *picker = [%c(PSSpecifier)
+    PSSpecifier *picker = [%c(PSSpecifier)
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
                             set:@selector(rsSetInterval:specifier:)
                             get:@selector(rsGetInterval:)
                          detail:listItemsCtrl
-                           cell:(PSCellType)6 // Cast integer literal to PSCellType
+                           cell:(PSCellType)6
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
 
-    // Use setProperty:forKey: instead of setObject:forKey:
+    // Assign required options array for the detail list view
+    NSArray *values = @[@0, @7, @14, @30, @60, @90];
+    NSArray *titles = @[@"Disabled", @"Every 7 Days", @"Every 14 Days", @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"];
+
+    [picker setProperty:values forKey:@"validTitles"]; // backing storage
+    [picker setProperty:values forKey:@"values"];
+    [picker setProperty:titles forKey:@"titles"];
+    [picker setProperty:@0 forKey:@"default"];
     [picker setProperty:kRSSuite forKey:@"defaults"];
     [picker setProperty:kRSInterval forKey:@"key"];
-    [picker setProperty:kRSSuite forKey:@"defaultsDomain"];
 
     NSMutableArray *mut = [orig mutableCopy];
     NSUInteger insertAt = (mut.count > 1) ? (mut.count - 1) : mut.count;
