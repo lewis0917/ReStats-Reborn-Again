@@ -73,10 +73,13 @@ static BOOL RSResetOverdue(void) {
 // addSpecifier:animated: in viewDidAppear: commits the specifier AFTER the table
 // has already cached its row count, causing a desync that crashes on scroll reuse.
 - (NSMutableArray *)specifiers {
-    NSMutableArray *specs = %orig;
+    // mutableCopy here because %orig returns an immutable NSArray in practice —
+    // the NSMutableArray * return type in the hook signature is a lie the compiler
+    // accepts silently. Calling addObject: on the raw %orig result throws
+    // NSInvalidArgumentException (__NSArrayI addObject: unrecognized selector).
+    NSMutableArray *specs = [%orig mutableCopy];
     if (!specs) return specs;
 
-    // Idempotency guard — specifiers can be called more than once
     for (PSSpecifier *s in specs) {
         if ([[s identifier] isEqualToString:@"RSIntervalPicker"]) return specs;
     }
@@ -98,9 +101,9 @@ static BOOL RSResetOverdue(void) {
     [picker setProperty:@[@"Disabled", @"Every 7 Days", @"Every 14 Days",
                           @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"]
                  forKey:@"titles"];
-    [picker setProperty:@0          forKey:@"default"];
-    [picker setProperty:kRSSuite    forKey:@"defaults"];
-    [picker setProperty:kRSInterval forKey:@"key"];
+    [picker setProperty:@0                forKey:@"default"];
+    [picker setProperty:kRSSuite          forKey:@"defaults"];
+    [picker setProperty:kRSInterval       forKey:@"key"];
     [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
 
     [specs addObject:picker];
