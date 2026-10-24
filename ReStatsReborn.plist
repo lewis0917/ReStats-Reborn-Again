@@ -1,7 +1,20 @@
-{
-	Filter = {
-		Bundles = (
-			"com.apple.springboard",
-		);
-	};
-}
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Filter</key>
+    <dict>
+        <!--
+            Load into com.apple.Preferences only.
+            com.apple.settings.cellular is a Settings extension that executes
+            *inside* the Preferences process on iOS 15–18; filtering to the
+            parent process is sufficient and avoids double-injection.
+        -->
+        <key>Bundles</key>
+        <array>
+            <string>com.apple.Preferences</string>
+        </array>
+    </dict>
+</dict>
+</plist>
