@@ -10,41 +10,76 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-            fetch-depth: 1
+          fetch-depth: 1
 
-      - name: Cache Theos Framework & SDKs
+      # Theos on Linux needs fakeroot + dpkg-dev to assemble .deb,
+      # perl for its own scripts, and curl/git for toolchain fetches.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq \
+            fakeroot \
+            dpkg-dev \
+            libplist-utils \
+            curl \
+            perl \
+            git
+
+      # ldid is required for fake-signing the dylib before dpkg-deb.
+      # Without it, make package stalls or produces an unsigned/broken deb.
+      - name: Install ldid
+        run: |
+          curl -sL https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 \
+            -o /usr/local/bin/ldid
+          chmod +x /usr/local/bin/ldid
+
+      # Cache key includes OS so a macOS runner won't restore a Linux build.
+      # Theos is cloned with --recursive so all vendor submodules are present —
+      # Gemini's version was missing submodules, which breaks header resolution.
+      - name: Cache Theos
+        id: cache-theos
         uses: actions/cache@v4
         with:
-            path: ~/theos
-            key: ${{ runner.os }}-theos-sdk-v1
+          path: ~/theos
+          key: theos-${{ runner.os }}-v1
 
-      - name: Setup Theos & SDK
+      - name: Clone Theos
+        if: steps.cache-theos.outputs.cache-hit != 'true'
         run: |
-            if [ ! -d "$HOME/theos" ]; then
-              git clone --recursive https://github.com/theos/theos.git ~/theos
-            fi
-            
-            # Download a standard iPhoneOS SDK if none exists in theos/sdks
-            if [ ! -d "$HOME/theos/sdks/iPhoneOS.sdk" ]; then
-              echo "Downloading iPhoneOS SDK..."
-              mkdir -p ~/theos/sdks
-              git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks_temp
-              mv ~/theos/sdks_temp/*.sdk ~/theos/sdks/
-              rm -rf ~/theos/sdks_temp
-            fi
+          git clone --recursive --depth=1 \
+            https://github.com/theos/theos.git ~/theos
 
-      - name: Build Package
+      # SDKs are cached separately so a Theos update doesn't invalidate them.
+      # Gemini checked for iPhoneOS.sdk (doesn't exist) — actual SDK filenames
+      # are versioned: iPhoneOS15.5.sdk, iPhoneOS16.5.sdk, etc.
+      - name: Cache SDKs
+        id: cache-sdks
+        uses: actions/cache@v4
+        with:
+          path: ~/theos/sdks
+          key: theos-sdks-v1
+
+      - name: Install SDKs
+        if: steps.cache-sdks.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/theos/sdks
+          git clone --depth=1 \
+            https://github.com/theos/sdks.git /tmp/theos-sdks
+          mv /tmp/theos-sdks/*.sdk ~/theos/sdks/
+          rm -rf /tmp/theos-sdks
+
+      - name: Build
         env:
-            THEOS: /home/runner/theos
-            MAKEFLAGS: "-j4"
+          THEOS: /home/runner/theos
         run: |
-            make package FINALPACKAGE=1
+          make package FINALPACKAGE=1 -j$(nproc)
 
-      - name: Upload Artifact
+      - name: Upload .deb
         uses: actions/upload-artifact@v4
         with:
-            name: ReStats-Debian-Package
-            path: packages/*.deb
+          name: ReStats-deb
+          path: packages/*.deb
+          if-no-files-found: error
