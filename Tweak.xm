@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v18 · PSTitleValueCell Live Subtitle Display)
+// ReStats — Tweak.xm (v19 · Explicit Specifier Value Property)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +15,7 @@
 @interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
 - (void)rsOpenIntervalPicker:(PSSpecifier *)spec;
+- (NSString *)rsCurrentSubtitleString;
 @end
 
 static NSString *const kRSSuite     = @"com.lo.restats";
@@ -77,18 +78,21 @@ static BOOL RSResetOverdue(void) {
 
     NSMutableArray *specs = [orig mutableCopy];
 
-    // PSTitleValueCell displays the title on the left and the value from 'get:' on the right
+    // Create specifier as PSTitleValueCell
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
                             set:nil
-                            get:@selector(rsGetIntervalSubtitle:)
+                            get:nil
                          detail:nil
                            cell:(PSCellType)PSTitleValueCell
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
     [picker setProperty:@YES forKey:@"enabled"];
+    
+    // Explicitly set the initial value property so the right-side subtitle renders immediately
+    [picker setProperty:[self rsCurrentSubtitleString] forKey:@"value"];
 
     [specs addObject:picker];
 
@@ -121,7 +125,7 @@ static BOOL RSResetOverdue(void) {
 }
 
 %new
-- (id)rsGetIntervalSubtitle:(PSSpecifier *)__unused spec {
+- (NSString *)rsCurrentSubtitleString {
     NSInteger days = RSIntervalDays();
     if (days <= 0) return @"Disabled";
     if (days == 30) return @"Monthly (30 Days)";
@@ -143,6 +147,9 @@ static BOOL RSResetOverdue(void) {
         [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
             [RSPrefs() setInteger:days forKey:kRSInterval];
             [RSPrefs() synchronize];
+
+            // Explicitly update the specifier's internal value property
+            [spec setProperty:[self rsCurrentSubtitleString] forKey:@"value"];
 
             UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
             [haptic impactOccurred];
