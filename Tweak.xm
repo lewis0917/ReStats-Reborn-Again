@@ -1,12 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v9 · viewDidLoad injection)
+// ReStats — Tweak.xm (v10 · associated object specifier injection)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
+// Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
+#import <objc/runtime.h>
 
 @interface PSUICellularController : PSListController
 @end
@@ -18,6 +20,8 @@
 @interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
 @end
+
+// ─── Preference storage ───────────────────────────────────────────────────────
 
 static NSString *const kRSSuite     = @"com.lo.restats";
 static NSString *const kRSInterval  = @"resetIntervalDays";
@@ -62,20 +66,36 @@ static BOOL RSResetOverdue(void) {
     return ([nextDue compare:NSDate.date] == NSOrderedAscending);
 }
 
+// ─── PSUICellularController hook ──────────────────────────────────────────────
+
+static const char *kRSCachedSpecifiersKey = "RSCachedSpecifiersKey";
+
 %hook PSUICellularController
 
-// viewDidLoad fires before the table view issues its first numberOfRowsInSection:
-// query. Injecting here means group structures are built from our augmented
-// specifiers array on that first query — no desynch, no scroll crash.
-// viewDidAppear: is too late: layout is committed, scroll tracking is live,
-// and any mutation races against active cell reuse.
-- (void)viewDidLoad {
-    %orig;
+- (NSMutableArray *)specifiers {
+    // 1. If we already injected and cached our array on this controller instance, return it immediately.
+    // Returning the EXACT same pointer identity prevents table group desync & scroll crashes.
+    NSMutableArray *cached = objc_getAssociatedObject(self, kRSCachedSpecifiersKey);
+    if (cached) {
+        return cached;
+    }
 
-    // specifierForID: triggers the specifiers lazy-load internally —
-    // safe to call in viewDidLoad, and doubles as our idempotency guard.
-    if ([self specifierForID:@"RSIntervalPicker"]) return;
+    // 2. Fetch the original specifier array
+    NSArray *orig = %orig;
+    if (!orig || orig.count == 0) return (NSMutableArray *)orig;
 
+    // 3. Make a single mutable copy
+    NSMutableArray *specs = [orig mutableCopy];
+
+    // Check if item was somehow already added
+    for (PSSpecifier *s in specs) {
+        if ([[s identifier] isEqualToString:@"RSIntervalPicker"]) {
+            objc_setAssociatedObject(self, kRSCachedSpecifiersKey, specs, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            return specs;
+        }
+    }
+
+    // 4. Construct our PSLinkListCell specifier
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
@@ -98,14 +118,13 @@ static BOOL RSResetOverdue(void) {
     [picker setProperty:kRSInterval       forKey:@"key"];
     [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
 
-    // [[self specifiers] lastObject] triggers the lazy-load if not already done,
-    // giving us a valid anchor in the fully-populated array before we insert.
-    PSSpecifier *anchor = [[self specifiers] lastObject];
-    if (anchor) {
-        [self insertSpecifier:picker afterSpecifier:anchor animated:NO];
-    } else {
-        [self addSpecifier:picker animated:NO];
-    }
+    // Append to array
+    [specs addObject:picker];
+
+    // 5. Store the augmented array instance on 'self' so all future calls during scrolling return this exact array.
+    objc_setAssociatedObject(self, kRSCachedSpecifiersKey, specs, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    return specs;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -162,6 +181,8 @@ static BOOL RSResetOverdue(void) {
 }
 
 %end
+
+// ─── Manual reset tracker ─────────────────────────────────────────────────────
 
 %hook PSListController
 
