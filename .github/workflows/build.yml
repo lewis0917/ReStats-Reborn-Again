@@ -13,29 +13,38 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+            fetch-depth: 1
 
-      - name: Cache Theos Framework
+      - name: Cache Theos Framework & SDKs
         uses: actions/cache@v4
         with:
-          path: ~/theos
-          key: ${{ runner.os }}-theos-v1
+            path: ~/theos
+            key: ${{ runner.os }}-theos-sdk-v1
 
-      - name: Setup Theos
+      - name: Setup Theos & SDK
         run: |
-          if [ ! -d "$HOME/theos" ]; then
-            git clone --recursive https://github.com/theos/theos.git ~/theos
-          fi
+            if [ ! -d "$HOME/theos" ]; then
+              git clone --recursive https://github.com/theos/theos.git ~/theos
+            fi
+            
+            # Download a standard iPhoneOS SDK if none exists in theos/sdks
+            if [ ! -d "$HOME/theos/sdks/iPhoneOS.sdk" ]; then
+              echo "Downloading iPhoneOS SDK..."
+              mkdir -p ~/theos/sdks
+              git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks_temp
+              mv ~/theos/sdks_temp/*.sdk ~/theos/sdks/
+              rm -rf ~/theos/sdks_temp
+            fi
 
       - name: Build Package
         env:
-          THEOS: /home/runner/theos
-          MAKEFLAGS: "-j4"
+            THEOS: /home/runner/theos
+            MAKEFLAGS: "-j4"
         run: |
-          make package FINALPACKAGE=1
+            make package FINALPACKAGE=1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ReStats-Debian-Package
-          path: packages/*.deb
+            name: ReStats-Debian-Package
+            path: packages/*.deb
