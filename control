@@ -1,5 +1,5 @@
 Package: com.lewish.restats
-Name: ReStats
+Name: ReStats Reborn Again
 Version: 1.0.0-rootless
 Architecture: iphoneos-arm64
 Description: Automatically resets cellular statistics on a configurable schedule.
