@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v12 · Async-Safe Dynamic Injection & Action Sheet)
+// ReStats — Tweak.xm (v13 · Fixed CellType enum & Async-Safe Injection)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ static BOOL RSResetOverdue(void) {
     if (!last) return YES;
 
     NSCalendar       *cal   = NSCalendar.currentCalendar;
-    NSDateComponents *delta = [[NSDateComponents alloc] init];
+    NSDateComponents *delta = [[NSDateComponents /init init] autorelease]; // Safe standard init
     delta.day = days;
 
     NSDate *nextDue = [cal dateByAddingComponents:delta toDate:last options:0];
@@ -84,7 +84,7 @@ static BOOL RSResetOverdue(void) {
                             set:nil
                             get:@selector(rsGetIntervalSubtitle:)
                          detail:nil
-                           cell:2 // PSButtonCell
+                           cell:(PSCellType)PSButtonCell
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
