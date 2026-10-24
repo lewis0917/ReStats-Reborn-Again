@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Code
@@ -23,6 +23,8 @@ jobs:
       - name: Build Package
         run: |
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+        env:
+          TARGET: iphoneos:clang:latest:15.0
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
