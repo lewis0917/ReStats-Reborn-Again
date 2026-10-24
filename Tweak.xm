@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v19 · Explicit Specifier Value Property)
+// ReStats — Tweak.xm (v20 · Direct Title-State Binding)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@
 @interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
 - (void)rsOpenIntervalPicker:(PSSpecifier *)spec;
-- (NSString *)rsCurrentSubtitleString;
+- (NSString *)rsFormattedTitle;
 @end
 
 static NSString *const kRSSuite     = @"com.lo.restats";
@@ -78,37 +78,24 @@ static BOOL RSResetOverdue(void) {
 
     NSMutableArray *specs = [orig mutableCopy];
 
-    // Create specifier as PSTitleValueCell
+    // Use PSButtonCell so it acts as a clean tappable row
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
-        preferenceSpecifierNamed:@"Auto-Reset Interval"
+        preferenceSpecifierNamed:[self rsFormattedTitle]
                          target:self
                             set:nil
                             get:nil
                          detail:nil
-                           cell:(PSCellType)PSTitleValueCell
+                           cell:(PSCellType)PSButtonCell
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
-    [picker setProperty:@YES forKey:@"enabled"];
-    
-    // Explicitly set the initial value property so the right-side subtitle renders immediately
-    [picker setProperty:[self rsCurrentSubtitleString] forKey:@"value"];
+    [picker setButtonAction:@selector(rsOpenIntervalPicker:)];
 
     [specs addObject:picker];
 
     [self setValue:specs forKey:@"_specifiers"];
 
     return specs;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    PSSpecifier *spec = [self specifierAtIndexPath:indexPath];
-    if ([[spec identifier] isEqualToString:@"RSIntervalPicker"]) {
-        [tableView deselectRowAtIndexPath:indexPath animated:YES];
-        [self rsOpenIntervalPicker:spec];
-        return;
-    }
-    %orig(tableView, indexPath);
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -125,11 +112,15 @@ static BOOL RSResetOverdue(void) {
 }
 
 %new
-- (NSString *)rsCurrentSubtitleString {
+- (NSString *)rsFormattedTitle {
     NSInteger days = RSIntervalDays();
-    if (days <= 0) return @"Disabled";
-    if (days == 30) return @"Monthly (30 Days)";
-    return [NSString stringWithFormat:@"Every %ld Days", (long)days];
+    NSString *status = @"Disabled";
+    if (days == 30) {
+        status = @"Monthly (30 Days)";
+    } else if (days > 0) {
+        status = [NSString stringWithFormat:@"Every %ld Days", (long)days];
+    }
+    return [NSString stringWithFormat:@"Auto-Reset Interval: %@", status];
 }
 
 %new
@@ -148,8 +139,8 @@ static BOOL RSResetOverdue(void) {
             [RSPrefs() setInteger:days forKey:kRSInterval];
             [RSPrefs() synchronize];
 
-            // Explicitly update the specifier's internal value property
-            [spec setProperty:[self rsCurrentSubtitleString] forKey:@"value"];
+            // Directly update the specifier title string with the new state
+            [spec setName:[self rsFormattedTitle]];
 
             UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
             [haptic impactOccurred];
