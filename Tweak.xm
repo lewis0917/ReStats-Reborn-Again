@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v8 · insertSpecifier:afterSpecifier: fix)
+// ReStats — Tweak.xm (v9 · viewDidLoad injection)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -64,9 +64,16 @@ static BOOL RSResetOverdue(void) {
 
 %hook PSUICellularController
 
-- (void)viewDidAppear:(BOOL)animated {
-    %orig(animated);
+// viewDidLoad fires before the table view issues its first numberOfRowsInSection:
+// query. Injecting here means group structures are built from our augmented
+// specifiers array on that first query — no desynch, no scroll crash.
+// viewDidAppear: is too late: layout is committed, scroll tracking is live,
+// and any mutation races against active cell reuse.
+- (void)viewDidLoad {
+    %orig;
 
+    // specifierForID: triggers the specifiers lazy-load internally —
+    // safe to call in viewDidLoad, and doubles as our idempotency guard.
     if ([self specifierForID:@"RSIntervalPicker"]) return;
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
@@ -91,17 +98,18 @@ static BOOL RSResetOverdue(void) {
     [picker setProperty:kRSInterval       forKey:@"key"];
     [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
 
-    // insertSpecifier:afterSpecifier:animated: updates BOTH _specifiers (flat)
-    // AND _specifiersByGroup (group structures the table uses for scroll).
-    // Every specifiers-getter approach failed because %orig builds group
-    // structures before returning — our injection was always after that point,
-    // leaving _specifiersByGroup out of sync with _specifiers and crashing on scroll.
+    // [[self specifiers] lastObject] triggers the lazy-load if not already done,
+    // giving us a valid anchor in the fully-populated array before we insert.
     PSSpecifier *anchor = [[self specifiers] lastObject];
     if (anchor) {
         [self insertSpecifier:picker afterSpecifier:anchor animated:NO];
     } else {
         [self addSpecifier:picker animated:NO];
     }
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
 
     if (RSResetOverdue()) {
         __weak PSUICellularController *ws = self;
