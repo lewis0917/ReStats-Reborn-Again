@@ -1,69 +1,33 @@
-name: Build ReStats
+name: Build Package
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ master, main ]
   pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    # macOS gives us Xcode's clang at exactly the path Theos expects.
-    # Linux requires a separate iOS cross-compilation toolchain download
-    # (theos/toolchain) that doesn't ship with the Theos clone — skipping
-    # that entire problem by running on macOS where it's already there.
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          submodules: recursive
 
-      # ldid fake-signs the dylib before dpkg-deb runs.
-      # Theos ships ldid2 in its vendor dir but brew ldid is more reliable
-      # on the macOS runner image and resolves PATH without extra config.
-      - name: Install ldid
-        run: brew install ldid
-
-      - name: Cache Theos
-        id: cache-theos
-        uses: actions/cache@v4
-        with:
-          path: ~/theos
-          key: theos-${{ runner.os }}-v1
-
-      - name: Clone Theos
-        if: steps.cache-theos.outputs.cache-hit != 'true'
+      - name: Install Dependencies
         run: |
-          git clone --recursive --depth=1 \
-            https://github.com/theos/theos.git ~/theos
+          brew install ldid xz
 
-      # SDKs cached separately — a Theos update won't blow them away.
-      - name: Cache SDKs
-        id: cache-sdks
-        uses: actions/cache@v4
-        with:
-          path: ~/theos/sdks
-          key: theos-sdks-v1
-
-      - name: Install SDKs
-        if: steps.cache-sdks.outputs.cache-hit != 'true'
+      - name: Checkout Theos & SDKs
         run: |
-          git clone --depth=1 \
-            https://github.com/theos/sdks.git /tmp/theos-sdks
-          mv /tmp/theos-sdks/*.sdk ~/theos/sdks/
-          rm -rf /tmp/theos-sdks
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          rm -rf $HOME/theos/sdks
+          git clone --recursive https://github.com/theos/sdks.git $HOME/theos/sdks
 
-      - name: Build
-        env:
-          # macOS runner home is /Users/runner, not /home/runner
-          THEOS: /Users/runner/theos
+      - name: Build Package
         run: |
-          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReStats-deb
-          path: packages/*.deb
-          if-no-files-found: error
+          export THEOS=$HOME/theos
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:latest:15.0
