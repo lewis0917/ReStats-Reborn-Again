@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v10 · associated object specifier injection)
+// ReStats — Tweak.xm (v11 · blank-screen fix & stable pointer caching)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,21 +73,24 @@ static const char *kRSCachedSpecifiersKey = "RSCachedSpecifiersKey";
 %hook PSUICellularController
 
 - (NSMutableArray *)specifiers {
-    // 1. If we already injected and cached our array on this controller instance, return it immediately.
-    // Returning the EXACT same pointer identity prevents table group desync & scroll crashes.
+    // 1. Return cached modified array if we already built it
     NSMutableArray *cached = objc_getAssociatedObject(self, kRSCachedSpecifiersKey);
     if (cached) {
         return cached;
     }
 
-    // 2. Fetch the original specifier array
+    // 2. Fetch original specifiers from super/system
     NSArray *orig = %orig;
-    if (!orig || orig.count == 0) return (NSMutableArray *)orig;
 
-    // 3. Make a single mutable copy
+    // DO NOT cache or freeze if the system returns empty/nil while still loading!
+    if (!orig || orig.count == 0) {
+        return (NSMutableArray *)orig;
+    }
+
+    // 3. Clone array once real specifiers arrive
     NSMutableArray *specs = [orig mutableCopy];
 
-    // Check if item was somehow already added
+    // 4. Check if already injected
     for (PSSpecifier *s in specs) {
         if ([[s identifier] isEqualToString:@"RSIntervalPicker"]) {
             objc_setAssociatedObject(self, kRSCachedSpecifiersKey, specs, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -95,7 +98,7 @@ static const char *kRSCachedSpecifiersKey = "RSCachedSpecifiersKey";
         }
     }
 
-    // 4. Construct our PSLinkListCell specifier
+    // 5. Construct PSLinkListCell picker
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
@@ -118,10 +121,9 @@ static const char *kRSCachedSpecifiersKey = "RSCachedSpecifiersKey";
     [picker setProperty:kRSInterval       forKey:@"key"];
     [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
 
-    // Append to array
     [specs addObject:picker];
 
-    // 5. Store the augmented array instance on 'self' so all future calls during scrolling return this exact array.
+    // 6. Cache ONLY when populated so pointer remains stable on all scroll passes
     objc_setAssociatedObject(self, kRSCachedSpecifiersKey, specs, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     return specs;
