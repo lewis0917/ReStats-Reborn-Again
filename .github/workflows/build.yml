@@ -31,3 +31,10 @@ jobs:
         run: |
           export THEOS=$HOME/theos
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:latest:15.0
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReStats-deb
+          path: packages/*.deb
+          if-no-files-found: error
