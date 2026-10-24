@@ -1,15 +1,14 @@
-# gitignore for Theos
-
-*.deb
-_/
-theos/
-theos
-.theos
+# Theos build output and cache
+.theos/
 obj/
-./obj/
-obj
+_/
+
+# Compiled Debian packages
+*.deb
+packages/
+
+# OS / Editor junk
 .DS_Store
+*.swp
 *.sublime-project
 *.sublime-workspace
-Packages/
-*.sh
