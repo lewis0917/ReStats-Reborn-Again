@@ -8,7 +8,10 @@
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
 
-// Forward declare PSCellType enum in case Preferences headers lack it
+// Forward declare private cellular controllers for Logos
+@interface PSCellularAccountGroupController : PSListController
+@end
+
 #ifndef PSLinkListCell
 #define PSLinkListCell 6
 #endif
@@ -128,7 +131,7 @@ static BOOL RSAlreadyInjected(NSArray *specs) {
     return NO;
 }
 
-// Default hook group
+// Global PSListController hook (covers general cellular views)
 %hook PSListController
 
 - (NSArray *)specifiers {
@@ -148,11 +151,10 @@ static BOOL RSAlreadyInjected(NSArray *specs) {
 
     [picker setIdentifier:@"RSIntervalPicker"];
 
-    // Assign required options array for the detail list view
     NSArray *values = @[@0, @7, @14, @30, @60, @90];
     NSArray *titles = @[@"Disabled", @"Every 7 Days", @"Every 14 Days", @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"];
 
-    [picker setProperty:values forKey:@"validTitles"]; // backing storage
+    [picker setProperty:values forKey:@"validTitles"];
     [picker setProperty:values forKey:@"values"];
     [picker setProperty:titles forKey:@"titles"];
     [picker setProperty:@0 forKey:@"default"];
