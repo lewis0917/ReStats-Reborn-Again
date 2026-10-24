@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v15 · Haptics, Live UI Refresh & Async-Safe Injection)
+// ReStats — Tweak.xm (v16 · PSLinkCell Detail Subtitle & Live Reload)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,13 +78,14 @@ static BOOL RSResetOverdue(void) {
     // Async load completed but picker is missing — inject it safely into the live array
     NSMutableArray *specs = [orig mutableCopy];
 
+    // PSLinkCell (cell:1) displays the right-side detail text returned by rsGetIntervalSubtitle:
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
                             set:nil
                             get:@selector(rsGetIntervalSubtitle:)
                          detail:nil
-                           cell:(PSCellType)PSButtonCell
+                           cell:(PSCellType)PSLinkCell
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
@@ -139,7 +140,7 @@ static BOOL RSResetOverdue(void) {
             UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
             [haptic impactOccurred];
 
-            // Instantly refresh the specifier subtitle on screen
+            // Refresh specifier so the detail text (PSLinkCell) updates immediately
             [self reloadSpecifier:spec animated:YES];
         }]];
     }
