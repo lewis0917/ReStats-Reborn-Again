@@ -7,7 +7,11 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # macOS gives us Xcode's clang at exactly the path Theos expects.
+    # Linux requires a separate iOS cross-compilation toolchain download
+    # (theos/toolchain) that doesn't ship with the Theos clone — skipping
+    # that entire problem by running on macOS where it's already there.
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
@@ -15,30 +19,12 @@ jobs:
         with:
           fetch-depth: 1
 
-      # Theos on Linux needs fakeroot + dpkg-dev to assemble .deb,
-      # perl for its own scripts, and curl/git for toolchain fetches.
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -yq \
-            fakeroot \
-            dpkg-dev \
-            libplist-utils \
-            curl \
-            perl \
-            git
-
-      # ldid is required for fake-signing the dylib before dpkg-deb.
-      # Without it, make package stalls or produces an unsigned/broken deb.
+      # ldid fake-signs the dylib before dpkg-deb runs.
+      # Theos ships ldid2 in its vendor dir but brew ldid is more reliable
+      # on the macOS runner image and resolves PATH without extra config.
       - name: Install ldid
-        run: |
-          curl -sL https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64 \
-            -o /usr/local/bin/ldid
-          chmod +x /usr/local/bin/ldid
+        run: brew install ldid
 
-      # Cache key includes OS so a macOS runner won't restore a Linux build.
-      # Theos is cloned with --recursive so all vendor submodules are present —
-      # Gemini's version was missing submodules, which breaks header resolution.
       - name: Cache Theos
         id: cache-theos
         uses: actions/cache@v4
@@ -52,9 +38,7 @@ jobs:
           git clone --recursive --depth=1 \
             https://github.com/theos/theos.git ~/theos
 
-      # SDKs are cached separately so a Theos update doesn't invalidate them.
-      # Gemini checked for iPhoneOS.sdk (doesn't exist) — actual SDK filenames
-      # are versioned: iPhoneOS15.5.sdk, iPhoneOS16.5.sdk, etc.
+      # SDKs cached separately — a Theos update won't blow them away.
       - name: Cache SDKs
         id: cache-sdks
         uses: actions/cache@v4
@@ -65,7 +49,6 @@ jobs:
       - name: Install SDKs
         if: steps.cache-sdks.outputs.cache-hit != 'true'
         run: |
-          mkdir -p ~/theos/sdks
           git clone --depth=1 \
             https://github.com/theos/sdks.git /tmp/theos-sdks
           mv /tmp/theos-sdks/*.sdk ~/theos/sdks/
@@ -73,9 +56,10 @@ jobs:
 
       - name: Build
         env:
-          THEOS: /home/runner/theos
+          # macOS runner home is /Users/runner, not /home/runner
+          THEOS: /Users/runner/theos
         run: |
-          make package FINALPACKAGE=1 -j$(nproc)
+          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
 
       - name: Upload .deb
         uses: actions/upload-artifact@v4
