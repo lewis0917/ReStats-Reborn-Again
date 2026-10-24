@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v4 · cellClass Fix)
+// ReStats — Tweak.xm (v5 · specifiers-override crash fix)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -15,8 +15,6 @@
 #define PSLinkListCell 6
 #endif
 
-// Forward declaration scoped to the actual subclass — _reStatsPerformReset
-// lives on PSUICellularController, not PSListController.
 @interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
 @end
@@ -24,8 +22,8 @@
 // ─── Preference storage ───────────────────────────────────────────────────────
 
 static NSString *const kRSSuite     = @"com.lo.restats";
-static NSString *const kRSInterval  = @"resetIntervalDays";   // NSInteger; 0 = disabled
-static NSString *const kRSLastReset = @"lastResetTimestamp";  // double (POSIX epoch)
+static NSString *const kRSInterval  = @"resetIntervalDays";
+static NSString *const kRSLastReset = @"lastResetTimestamp";
 
 static NSUserDefaults *RSPrefs(void) {
     static NSUserDefaults *_d;
@@ -70,41 +68,49 @@ static BOOL RSResetOverdue(void) {
 
 %hook PSUICellularController
 
-- (void)viewDidAppear:(BOOL)animated {
-    %orig(animated);
+// Inject inside the specifiers getter — called once before the table ever
+// queries numberOfRowsInSection:, so the row count is consistent from frame one.
+// addSpecifier:animated: in viewDidAppear: commits the specifier AFTER the table
+// has already cached its row count, causing a desync that crashes on scroll reuse.
+- (NSMutableArray *)specifiers {
+    NSMutableArray *specs = %orig;
+    if (!specs) return specs;
 
-    if ([self specifierForID:@"RSIntervalPicker"] != nil) return;
+    // Idempotency guard — specifiers can be called more than once
+    for (PSSpecifier *s in specs) {
+        if ([[s identifier] isEqualToString:@"RSIntervalPicker"]) return specs;
+    }
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
-PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
-    preferenceSpecifierNamed:@"Auto-Reset Interval"
-                     target:self
-                        set:@selector(rsSetInterval:specifier:)
-                        get:@selector(rsGetInterval:)
-                     detail:listItemsCtrl
-                       cell:(PSCellType)PSLinkListCell   // explicit cast — PSCellType is typed enum in Theos headers
-                       edit:nil];
+    PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
+        preferenceSpecifierNamed:@"Auto-Reset Interval"
+                         target:self
+                            set:@selector(rsSetInterval:specifier:)
+                            get:@selector(rsGetInterval:)
+                         detail:listItemsCtrl
+                           cell:(PSCellType)PSLinkListCell
+                           edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
-
     [picker setProperty:@[@0, @7, @14, @30, @60, @90]
                  forKey:@"values"];
     [picker setProperty:@[@"Disabled", @"Every 7 Days", @"Every 14 Days",
                           @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"]
                  forKey:@"titles"];
     [picker setProperty:@0          forKey:@"default"];
-
-    // PSListItemsController reads these to persist and restore selection state.
     [picker setProperty:kRSSuite    forKey:@"defaults"];
     [picker setProperty:kRSInterval forKey:@"key"];
-
-    // The Preferences framework resolves the cell class from this string key
-    // before it reads the cell type integer — without it the integer is ignored
-    // and the framework falls back to PSToggleSwitchCell (confirmed by screenshot).
     [picker setProperty:@"PSLinkListCell" forKey:@"cellClass"];
 
-    [self addSpecifier:picker animated:NO];
+    [specs addObject:picker];
+    return specs;
+}
+
+// viewDidAppear: now only handles the auto-reset evaluation —
+// specifier injection is gone from here entirely.
+- (void)viewDidAppear:(BOOL)animated {
+    %orig(animated);
 
     if (RSResetOverdue()) {
         __weak PSUICellularController *ws = self;
@@ -134,8 +140,8 @@ PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         @"resetStatistics:",
         @"resetCellularStatistics:",
         @"cellularResetStatistics:",
-        @"_resetDataCounters",      // no-arg — branch below handles the call form
-        @"performResetStatistics"   // no-arg
+        @"_resetDataCounters",
+        @"performResetStatistics"
     ];
 
     for (NSString *name in candidates) {
@@ -144,9 +150,6 @@ PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        // Selectors without a trailing colon take zero arguments.
-        // Calling performSelector:withObject: on a zero-arg IMP pushes a value
-        // into x2 the callee never reads — UB-adjacent on arm64.
         if ([name hasSuffix:@":"]) {
             [self performSelector:s withObject:nil];
         } else {
@@ -162,9 +165,6 @@ PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
 %end
 
 // ─── Manual reset tracker ─────────────────────────────────────────────────────
-// Hooks at PSListController level because resetStatistics: may be dispatched
-// polymorphically from that base, but guards on isKindOfClass: so unrelated
-// Settings panes don't stamp a cellular timestamp on their own resets.
 
 %hook PSListController
 
