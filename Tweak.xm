@@ -77,17 +77,14 @@ static BOOL RSResetOverdue(void) {
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
-    // NSClassFromString is safer than %c() here — resolves gracefully if the
-    // class image hasn't been mapped yet at hook time. Same caveat applies to
-    // PSListItemsController above.
-    PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
-        preferenceSpecifierNamed:@"Auto-Reset Interval"
-                         target:self
-                            set:@selector(rsSetInterval:specifier:)
-                            get:@selector(rsGetInterval:)
-                         detail:listItemsCtrl
-                           cell:6   // PSLinkListCell — forced as raw integer
-                           edit:nil];
+PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
+    preferenceSpecifierNamed:@"Auto-Reset Interval"
+                     target:self
+                        set:@selector(rsSetInterval:specifier:)
+                        get:@selector(rsGetInterval:)
+                     detail:listItemsCtrl
+                       cell:(PSCellType)PSLinkListCell   // explicit cast — PSCellType is typed enum in Theos headers
+                       edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
 
