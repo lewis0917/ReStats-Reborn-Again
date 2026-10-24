@@ -1,7 +1,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (Crash Fix & Final Build)
-// Rootless rewrite: ElleKit · iOS 15–18 · arm64 + arm64e
-// Target Class: PSUICellularController (com.apple.telephony.CellularSettingsUI)
+// ReStats — Tweak.xm (v3 · Reviewed & Patched)
+// Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // ─────────────────────────────────────────────────────────────────────────────
 
 #import <UIKit/UIKit.h>
@@ -16,15 +15,17 @@
 #define PSLinkListCell 6
 #endif
 
-// Private API additions
-@interface PSListController (ReStatsAdditions)
+// Forward declaration scoped correctly — method lives on PSUICellularController,
+// not PSListController. Declaring on the actual subclass avoids misleading callers.
+@interface PSUICellularController (ReStatsAdditions)
 - (void)_reStatsPerformReset;
 @end
 
-// Preference storage
-static NSString *const kRSSuite      = @"com.lo.restats";
-static NSString *const kRSInterval   = @"resetIntervalDays";    // NSInteger; 0 = disabled
-static NSString *const kRSLastReset  = @"lastResetTimestamp";   // double (POSIX epoch)
+// ─── Preference storage ───────────────────────────────────────────────────────
+
+static NSString *const kRSSuite     = @"com.lo.restats";
+static NSString *const kRSInterval  = @"resetIntervalDays";   // NSInteger; 0 = disabled
+static NSString *const kRSLastReset = @"lastResetTimestamp";  // double (POSIX epoch)
 
 static NSUserDefaults *RSPrefs(void) {
     static NSUserDefaults *_d;
@@ -65,16 +66,13 @@ static BOOL RSResetOverdue(void) {
     return ([nextDue compare:NSDate.date] == NSOrderedAscending);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Dynamic Hooking on PSUICellularController
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── PSUICellularController hook ──────────────────────────────────────────────
 
 %hook PSUICellularController
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig(animated);
 
-    // Prevent duplicate row injection if already present
     if ([self specifierForID:@"RSIntervalPicker"] != nil) return;
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
@@ -85,27 +83,24 @@ static BOOL RSResetOverdue(void) {
                             set:@selector(rsSetInterval:specifier:)
                             get:@selector(rsGetInterval:)
                          detail:listItemsCtrl
-                           cell:(PSCellType)6
+                           cell:(PSCellType)PSLinkListCell
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
 
-    NSArray *values = @[@0, @7, @14, @30, @60, @90];
-    NSArray *titles = @[@"Disabled", @"Every 7 Days", @"Every 14 Days", @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"];
-
-    [picker setProperty:values forKey:@"values"];
-    [picker setProperty:titles forKey:@"titles"];
-    [picker setProperty:@0 forKey:@"default"];
-    
-    // Required by PSListItemsController when selecting options
-    [picker setProperty:kRSSuite forKey:@"defaults"];
+    [picker setProperty:@[@0, @7, @14, @30, @60, @90]
+                 forKey:@"values"];
+    [picker setProperty:@[@"Disabled", @"Every 7 Days", @"Every 14 Days",
+                          @"Monthly (30 Days)", @"Every 60 Days", @"Every 90 Days"]
+                 forKey:@"titles"];
+    [picker setProperty:@0       forKey:@"default"];
+    // PSListItemsController reads these two to persist and display selection state.
+    // "defaultsDomain" is not a documented PSSpecifier key — "defaults" covers the domain.
+    [picker setProperty:kRSSuite    forKey:@"defaults"];
     [picker setProperty:kRSInterval forKey:@"key"];
-    [picker setProperty:kRSSuite forKey:@"defaultsDomain"];
 
-    // Dynamically insert into table view
     [self addSpecifier:picker animated:NO];
 
-    // Trigger reset evaluation if overdue
     if (RSResetOverdue()) {
         __weak PSUICellularController *ws = self;
         dispatch_after(
@@ -117,35 +112,43 @@ static BOOL RSResetOverdue(void) {
 }
 
 %new
-- (id)rsGetInterval:(PSSpecifier *)spec {
+- (id)rsGetInterval:(PSSpecifier *)__unused spec {
     return @(RSIntervalDays());
 }
 
 %new
 - (void)rsSetInterval:(id)value specifier:(PSSpecifier *)spec {
-    NSInteger days = [value integerValue];
-    [RSPrefs() setInteger:days forKey:kRSInterval];
+    [RSPrefs() setInteger:[value integerValue] forKey:kRSInterval];
     [RSPrefs() synchronize];
     [self reloadSpecifier:spec animated:YES];
 }
 
 %new
 - (void)_reStatsPerformReset {
-    NSArray *candidates = @[
+    NSArray<NSString *> *candidates = @[
         @"resetStatistics:",
         @"resetCellularStatistics:",
-        @"_resetDataCounters",
         @"cellularResetStatistics:",
-        @"performResetStatistics"
+        @"_resetDataCounters",       // no-arg
+        @"performResetStatistics"    // no-arg
     ];
-    
+
     for (NSString *name in candidates) {
         SEL s = NSSelectorFromString(name);
         if (![self respondsToSelector:s]) continue;
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-        [self performSelector:s withObject:nil];
+        // Selectors without a trailing colon take zero arguments.
+        // Passing nil via performSelector:withObject: pushes a value into x2
+        // that the callee never reads — UB-adjacent on arm64. Branch on colon.
+        if ([name hasSuffix:@":"]) {
+            [self performSelector:s withObject:nil];
+        } else {
+            [self performSelector:s];
+        }
 #pragma clang diagnostic pop
+
         RSRecordReset();
         return;
     }
@@ -153,10 +156,18 @@ static BOOL RSResetOverdue(void) {
 
 %end
 
-// Manual Reset Tracker
+// ─── Manual reset tracker ─────────────────────────────────────────────────────
+// Hooks PSListController because resetStatistics: may be defined there and called
+// polymorphically — but guards on isKindOfClass: so unrelated Settings panes
+// (network reset, privacy reset, etc.) don't stamp a cellular timestamp.
+
 %hook PSListController
+
 - (void)resetStatistics:(id)specifier {
     %orig(specifier);
-    RSRecordReset();
+    if ([self isKindOfClass:%c(PSUICellularController)]) {
+        RSRecordReset();
+    }
 }
+
 %end
