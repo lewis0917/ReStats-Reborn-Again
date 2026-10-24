@@ -140,24 +140,21 @@ static BOOL RSAlreadyInjected(NSArray *specs) {
 
     Class listItemsCtrl = NSClassFromString(@"PSListItemsController");
 
-    PSSpecifier *picker = [%c(PSSpecifier)
+        PSSpecifier *picker = [%c(PSSpecifier)
         preferenceSpecifierNamed:@"Auto-Reset Interval"
                          target:self
                             set:@selector(rsSetInterval:specifier:)
                             get:@selector(rsGetInterval:)
                          detail:listItemsCtrl
-                           cell:PSLinkListCell
+                           cell:(PSCellType)6 // Cast integer literal to PSCellType
                            edit:nil];
 
     [picker setIdentifier:@"RSIntervalPicker"];
 
-    // Explicitly bind defaults domain so PSListItemsController syncs checks properly
-    [picker setObject:kRSSuite forKey:@"defaults"];
-    [picker setObject:kRSInterval forKey:@"key"];
-
-    picker[PSValuesKey]       = @[@(0),  @(1),      @(7),      @(14),         @(30)];
-    picker[PSTitlesKey]       = @[@"Off", @"Daily", @"Weekly", @"Bi-Weekly",  @"Monthly"];
-    picker[PSDefaultValueKey] = @(0);
+    // Use setProperty:forKey: instead of setObject:forKey:
+    [picker setProperty:kRSSuite forKey:@"defaults"];
+    [picker setProperty:kRSInterval forKey:@"key"];
+    [picker setProperty:kRSSuite forKey:@"defaultsDomain"];
 
     NSMutableArray *mut = [orig mutableCopy];
     NSUInteger insertAt = (mut.count > 1) ? (mut.count - 1) : mut.count;
