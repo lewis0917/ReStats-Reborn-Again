@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v13 · Fixed CellType enum & Async-Safe Injection)
+// ReStats — Tweak.xm (v14 · Clean Syntax & Async-Safe Injection)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ static BOOL RSResetOverdue(void) {
     if (!last) return YES;
 
     NSCalendar       *cal   = NSCalendar.currentCalendar;
-    NSDateComponents *delta = [[NSDateComponents /init init] autorelease]; // Safe standard init
+    NSDateComponents *delta = [[NSDateComponents alloc] init];
     delta.day = days;
 
     NSDate *nextDue = [cal dateByAddingComponents:delta toDate:last options:0];
