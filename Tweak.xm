@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (Clean & Optimized)
+// ReStats — Tweak.xm (Crash Fix & Final Build)
 // Rootless rewrite: ElleKit · iOS 15–18 · arm64 + arm64e
 // Target Class: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,9 +96,14 @@ static BOOL RSResetOverdue(void) {
     [picker setProperty:values forKey:@"values"];
     [picker setProperty:titles forKey:@"titles"];
     [picker setProperty:@0 forKey:@"default"];
+    
+    // Required by PSListItemsController when selecting options
+    [picker setProperty:kRSSuite forKey:@"defaults"];
+    [picker setProperty:kRSInterval forKey:@"key"];
+    [picker setProperty:kRSSuite forKey:@"defaultsDomain"];
 
-    // Dynamically insert into the onscreen table view safely
-    [self addSpecifier:picker animated:YES];
+    // Dynamically insert into table view
+    [self addSpecifier:picker animated:NO];
 
     // Trigger reset evaluation if overdue
     if (RSResetOverdue()) {
@@ -112,14 +117,16 @@ static BOOL RSResetOverdue(void) {
 }
 
 %new
-- (id)rsGetInterval:(PSSpecifier *)__unused spec {
+- (id)rsGetInterval:(PSSpecifier *)spec {
     return @(RSIntervalDays());
 }
 
 %new
-- (void)rsSetInterval:(id)value specifier:(PSSpecifier *)__unused spec {
-    [RSPrefs() setInteger:[value integerValue] forKey:kRSInterval];
+- (void)rsSetInterval:(id)value specifier:(PSSpecifier *)spec {
+    NSInteger days = [value integerValue];
+    [RSPrefs() setInteger:days forKey:kRSInterval];
     [RSPrefs() synchronize];
+    [self reloadSpecifier:spec animated:YES];
 }
 
 %new
