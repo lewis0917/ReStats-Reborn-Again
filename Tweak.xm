@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v23 · UNUserNotificationCenter scheduling)
+// ReStats — Tweak.xm (v24 · ARC & Deprecation Fixes)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,8 +86,6 @@ static BOOL RSResetOverdue(void) {
 static void RSScheduleNotification(void) {
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
 
-    // Always cancel the existing pending request before rescheduling —
-    // covers interval changes and post-reset rescheduling cleanly.
     [center removePendingNotificationRequestsWithIdentifiers:@[kRSNotificationID]];
 
     NSInteger days = RSIntervalDays();
@@ -100,8 +98,6 @@ static void RSScheduleNotification(void) {
     delta.day = days;
     NSDate *fireDate = [cal dateByAddingComponents:delta toDate:base options:0];
 
-    // Calendar trigger — fires at the exact reset-due date at the same
-    // time-of-day as the last reset so it doesn't drift across cycles.
     NSDateComponents *fire = [cal
         components:NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay|
                    NSCalendarUnitHour|NSCalendarUnitMinute
@@ -188,11 +184,11 @@ static void RSRequestPermissionThenSchedule(void) {
     %orig(animated);
 
     if (RSResetOverdue()) {
-        __weak PSUICellularController *ws = self;
+        PSUICellularController *selfRef = self;
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, 600 * NSEC_PER_MSEC),
             dispatch_get_main_queue(),
-            ^{ [ws _reStatsPerformReset]; }
+            ^{ [selfRef _reStatsPerformReset]; }
         );
     }
 }
@@ -235,7 +231,7 @@ static void RSRequestPermissionThenSchedule(void) {
     }
 
     NSDateComponents *elapsed = [[NSCalendar currentCalendar]
-        components:NSDayCalendarUnit
+        components:NSCalendarUnitDay
           fromDate:last
             toDate:[NSDate date]
            options:0];
@@ -271,8 +267,6 @@ static void RSRequestPermissionThenSchedule(void) {
             [RSPrefs() setInteger:days forKey:kRSInterval];
             [RSPrefs() synchronize];
 
-            // Request permission if needed, then schedule the next
-            // reset notification for lastReset + new interval.
             RSRequestPermissionThenSchedule();
 
             [spec setName:[self rsFormattedTitle]];
@@ -327,8 +321,6 @@ static void RSRequestPermissionThenSchedule(void) {
 #pragma clang diagnostic pop
 
         RSRecordReset();
-
-        // Reschedule for the next cycle immediately after reset fires.
         RSScheduleNotification();
 
         PSSpecifier *pickerSpec = [self specifierForID:@"RSIntervalPicker"];
