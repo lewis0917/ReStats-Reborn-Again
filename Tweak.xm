@@ -120,6 +120,7 @@ static BOOL RSResetOverdue(void) {
 
     [picker setIdentifier:@"RSIntervalPicker"];
     [picker setButtonAction:@selector(rsOpenIntervalPicker:)];
+[picker setProperty:@YES forKey:@"enabled"];
 
     [specs addObject:group];
     [specs addObject:picker];
