@@ -23,10 +23,13 @@ jobs:
 
       - name: Set up Theos & SDKs
         run: |
-          # Clone Theos into ~/theos
+          # Clone base Theos
           git clone --recursive https://github.com/theos/theos.git ~/theos
-          
-          # Clone patched SDKs (which include Preferences.framework) into ~/theos/sdks
+
+          # Remove default empty/minimal sdks directory to avoid git clone conflicts
+          rm -rf ~/theos/sdks
+
+          # Clone patched SDKs containing Preferences.framework
           git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Build Package
