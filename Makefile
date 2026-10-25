@@ -6,7 +6,6 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = ReStats
 
 ReStats_FILES = Tweak.xm
-ReStats_CFLAGS = -fobjc-arc
 ReStats_FRAMEWORKS := UIKit Preferences UserNotifications
 
 include $(THEOS_MAKE_PATH)/tweak.mk
