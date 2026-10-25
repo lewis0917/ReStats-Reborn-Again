@@ -1,6 +1,6 @@
 # ReStats
 
-**ReStats** is a lightweight iOS tweak that brings automated mobile data statistics resetting to iOS 15–18 (Rootless / ElleKit). 
+**ReStats** is a lightweight tweak that brings automated mobile data statistics resetting to iOS 15–18. 
 
 ---
 
@@ -8,7 +8,6 @@
 
 * **Configurable Auto-Reset Intervals:** Choose how often your mobile data statistics automatically reset (*Every 7 Days, Every 14 Days, Monthly (30 Days), Every 60 Days, Every 90 Days*, or *Disabled*).
 * **Native Settings Integration:** Injects cleanly directly into the native Mobile Service settings panel.
-* **Lightweight & Battery-Friendly:** Avoids heavy persistent background daemons by evaluating reset intervals dynamically when you open your Mobile Service settings.
 
 ---
 
