@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ReStats — Tweak.xm (v22 · prototype + UX context)
+// ReStats — Tweak.xm (v23 · UNUserNotificationCenter scheduling)
 // Rootless · ElleKit · iOS 15–18 · arm64 + arm64e
 // Target: PSUICellularController (com.apple.telephony.CellularSettingsUI)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8,6 +8,7 @@
 #import <Foundation/Foundation.h>
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
+#import <UserNotifications/UserNotifications.h>
 
 @interface PSUICellularController : PSListController
 @end
@@ -27,9 +28,10 @@
 #define PSGroupCell 0
 #endif
 
-static NSString *const kRSSuite     = @"com.lo.restats";
-static NSString *const kRSInterval  = @"resetIntervalDays";
-static NSString *const kRSLastReset = @"lastResetTimestamp";
+static NSString *const kRSSuite          = @"com.lo.restats";
+static NSString *const kRSInterval       = @"resetIntervalDays";
+static NSString *const kRSLastReset      = @"lastResetTimestamp";
+static NSString *const kRSNotificationID = @"com.lo.restats.resetdue";
 
 static NSArray<NSNumber *> *RSValues(void) {
     return @[@0, @7, @14, @30, @60, @90];
@@ -79,6 +81,63 @@ static BOOL RSResetOverdue(void) {
     return ([nextDue compare:NSDate.date] == NSOrderedAscending);
 }
 
+// ─── Notification scheduling ──────────────────────────────────────────────────
+
+static void RSScheduleNotification(void) {
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+
+    // Always cancel the existing pending request before rescheduling —
+    // covers interval changes and post-reset rescheduling cleanly.
+    [center removePendingNotificationRequestsWithIdentifiers:@[kRSNotificationID]];
+
+    NSInteger days = RSIntervalDays();
+    if (days <= 0) return;
+
+    NSDate *base  = RSLastResetDate() ?: [NSDate date];
+    NSCalendar *cal = NSCalendar.currentCalendar;
+
+    NSDateComponents *delta = [NSDateComponents new];
+    delta.day = days;
+    NSDate *fireDate = [cal dateByAddingComponents:delta toDate:base options:0];
+
+    // Calendar trigger — fires at the exact reset-due date at the same
+    // time-of-day as the last reset so it doesn't drift across cycles.
+    NSDateComponents *fire = [cal
+        components:NSCalendarUnitYear|NSCalendarUnitMonth|NSCalendarUnitDay|
+                   NSCalendarUnitHour|NSCalendarUnitMinute
+          fromDate:fireDate];
+
+    UNMutableNotificationContent *content = [UNMutableNotificationContent new];
+    content.title = @"Mobile Data Reset Due";
+    content.body  = [NSString stringWithFormat:
+        @"Your %ld-day cycle is complete. Tap to open Mobile Data and reset statistics.",
+        (long)days];
+    content.sound = UNNotificationSound.defaultSound;
+
+    UNCalendarNotificationTrigger *trigger =
+        [UNCalendarNotificationTrigger triggerWithDateMatchingComponents:fire
+                                                                repeats:NO];
+
+    UNNotificationRequest *request =
+        [UNNotificationRequest requestWithIdentifier:kRSNotificationID
+                                             content:content
+                                             trigger:trigger];
+
+    [center addNotificationRequest:request withCompletionHandler:^(NSError *err) {
+        if (err) NSLog(@"[ReStats] notification schedule error: %@", err);
+    }];
+}
+
+static void RSRequestPermissionThenSchedule(void) {
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert|UNAuthorizationOptionSound
+                          completionHandler:^(BOOL granted, NSError *error) {
+        if (granted) {
+            dispatch_async(dispatch_get_main_queue(), ^{ RSScheduleNotification(); });
+        }
+    }];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 %hook PSUICellularController
@@ -93,9 +152,6 @@ static BOOL RSResetOverdue(void) {
 
     NSMutableArray *specs = [orig mutableCopy];
 
-    // Group header — carries the footer disclaimer and last-reset context.
-    // PSGroupCell is the section separator type PSListController expects;
-    // footerText surfaces below the injected row without any extra specifier.
     PSSpecifier *group = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:@"Auto-Reset"
                          target:self
@@ -108,7 +164,6 @@ static BOOL RSResetOverdue(void) {
     [group setIdentifier:@"RSGroupHeader"];
     [group setProperty:[self rsFooterText] forKey:@"footerText"];
 
-    // Tappable button row — title encodes current interval + last reset date.
     PSSpecifier *picker = [NSClassFromString(@"PSSpecifier")
         preferenceSpecifierNamed:[self rsFormattedTitle]
                          target:self
@@ -120,7 +175,7 @@ static BOOL RSResetOverdue(void) {
 
     [picker setIdentifier:@"RSIntervalPicker"];
     [picker setButtonAction:@selector(rsOpenIntervalPicker:)];
-[picker setProperty:@YES forKey:@"enabled"];
+    [picker setProperty:@YES forKey:@"enabled"];
 
     [specs addObject:group];
     [specs addObject:picker];
@@ -170,31 +225,30 @@ static BOOL RSResetOverdue(void) {
 
 %new
 - (NSString *)rsFooterText {
-    NSDate *last = RSLastResetDate();
+    NSDate *last  = RSLastResetDate();
     NSInteger days = RSIntervalDays();
 
     if (!last) {
-        return @"Statistics have not been automatically reset yet. "
+        return @"A notification will remind you when your reset cycle is due. "
                 "Local reset counts differ from your carrier's billing tally — "
                 "always verify remaining data directly with your provider.";
     }
 
     NSDateComponents *elapsed = [[NSCalendar currentCalendar]
-        components:NSCalendarUnitDay
+        components:NSDayCalendarUnit
           fromDate:last
             toDate:[NSDate date]
            options:0];
 
     NSString *nextLine = (days > 0)
-        ? [NSString stringWithFormat:@"Next automatic reset in %ld day%@.",
+        ? [NSString stringWithFormat:@"Next reset notification in %ld day%@.",
            (long)(days - elapsed.day),
            (days - elapsed.day == 1) ? @"" : @"s"]
         : @"Automatic reset is disabled.";
 
     return [NSString stringWithFormat:
         @"%@ Local statistics are offset from your carrier's billing cycle — "
-         "verify remaining data directly with your provider.",
-        nextLine];
+         "verify remaining data directly with your provider.", nextLine];
 }
 
 %new
@@ -204,8 +258,8 @@ static BOOL RSResetOverdue(void) {
 
     UIAlertController *alert = [UIAlertController
         alertControllerWithTitle:@"Auto-Reset Interval"
-                         message:@"Displayed usage is offset from your carrier's billing cycle. "
-                                  "Always verify remaining data with your provider."
+                         message:@"A notification will remind you when the cycle is due. "
+                                  "Opening the notification brings you here to reset automatically."
                   preferredStyle:UIAlertControllerStyleActionSheet];
 
     for (NSUInteger i = 0; i < titles.count; i++) {
@@ -217,9 +271,12 @@ static BOOL RSResetOverdue(void) {
             [RSPrefs() setInteger:days forKey:kRSInterval];
             [RSPrefs() synchronize];
 
+            // Request permission if needed, then schedule the next
+            // reset notification for lastReset + new interval.
+            RSRequestPermissionThenSchedule();
+
             [spec setName:[self rsFormattedTitle]];
 
-            // Refresh group footer to reflect updated next-reset countdown.
             PSSpecifier *header = [self specifierForID:@"RSGroupHeader"];
             if (header) {
                 [header setProperty:[self rsFooterText] forKey:@"footerText"];
@@ -271,8 +328,9 @@ static BOOL RSResetOverdue(void) {
 
         RSRecordReset();
 
-        // Refresh both specifiers so the UI reflects the new reset timestamp
-        // immediately without requiring the user to back out and re-enter.
+        // Reschedule for the next cycle immediately after reset fires.
+        RSScheduleNotification();
+
         PSSpecifier *pickerSpec = [self specifierForID:@"RSIntervalPicker"];
         PSSpecifier *headerSpec = [self specifierForID:@"RSGroupHeader"];
 
@@ -297,6 +355,7 @@ static BOOL RSResetOverdue(void) {
     %orig(specifier);
     if ([self isKindOfClass:%c(PSUICellularController)]) {
         RSRecordReset();
+        RSScheduleNotification();
     }
 }
 
