@@ -7,7 +7,7 @@
 ## Features
 
 * **Configurable Auto-Reset Intervals:** Choose how often your mobile data statistics automatically reset (*Every 7 Days, Every 14 Days, Monthly (30 Days), Every 60 Days, Every 90 Days*, or *Disabled*).
-* **Native Settings Integration:** Injects cleanly directly into the native Mobile Service settings panel.
+* **Native Settings Integration:** Injects  directly into the native Mobile Service settings panel.
 
 ---
 
