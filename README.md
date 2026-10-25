@@ -1,7 +1,4 @@
-# ReStats Reborn
+ReStats seamlessly integrates an automated timer-based reset mechanism into the native Mobile Data Settings menu.
 
-Automatically resets the Cellular Statistics (Settings > Mobile/Cellular) on a monthly, weekly or daily basis!
 
-Originally, this tweak is released by greenywd.
-CokePokes added iOS9-11 support on his forked version. (It's not open source contrary to the license though)
-I have added an support for iOS12 and iOS13 (and arm64e).
+Instead of manually clearing your data counters every billing cycle, ReStats automatically resets your mobile data statistics on a schedule you define (7, 14, 30, 60, or 90 days).
