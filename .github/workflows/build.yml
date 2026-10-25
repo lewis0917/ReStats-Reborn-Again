@@ -23,13 +23,8 @@ jobs:
 
       - name: Set up Theos & SDKs
         run: |
-          # Clone base Theos
           git clone --recursive https://github.com/theos/theos.git ~/theos
-
-          # Remove default empty/minimal sdks directory to avoid git clone conflicts
           rm -rf ~/theos/sdks
-
-          # Clone patched SDKs containing Preferences.framework
           git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Build Package
@@ -37,3 +32,12 @@ jobs:
           THEOS: /Users/runner/theos
         run: |
           make package FINALPACKAGE=1
+
+      - name: Upload .deb Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReStats-Debian-Package
+          path: |
+            packages/*.deb
+            *.deb
+          if-no-files-found: error
