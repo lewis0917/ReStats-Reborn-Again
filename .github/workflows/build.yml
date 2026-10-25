@@ -2,9 +2,9 @@ name: Build Package
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -12,29 +12,16 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Dependencies
-        run: |
-          brew install ldid xz
-
-      - name: Checkout Theos & SDKs
-        run: |
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          rm -rf $HOME/theos/sdks
-          git clone --recursive https://github.com/theos/sdks.git $HOME/theos/sdks
+      - name: Setup Theos
+        uses: theos/setup-theos@v1
+        with:
+          theos-sdks: 'https://github.com/theos/sdks'
 
       - name: Build Package
         run: |
-          export THEOS=$HOME/theos
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:latest:15.0
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: ReStats-deb
-          path: packages/*.deb
-          if-no-files-found: error
+          make package FINALPACKAGE=1
