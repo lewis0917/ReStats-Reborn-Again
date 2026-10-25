@@ -17,11 +17,20 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Theos
-        uses: theos/setup-theos@v1
-        with:
-          theos-sdks: 'https://github.com/theos/sdks'
+      - name: Install dependencies
+        run: |
+          brew install ldid xz
+
+      - name: Set up Theos & SDKs
+        run: |
+          # Clone Theos into ~/theos
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          
+          # Clone patched SDKs (which include Preferences.framework) into ~/theos/sdks
+          git clone --depth=1 https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Build Package
+        env:
+          THEOS: /Users/runner/theos
         run: |
           make package FINALPACKAGE=1
