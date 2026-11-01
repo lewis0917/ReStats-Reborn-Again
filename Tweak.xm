@@ -5,6 +5,8 @@
 #import <UserNotifications/UserNotifications.h>
 #import <objc/runtime.h>
 
+// ── Close any earlier hooks if they exist above this line ──
+
 %hook PSUICellularController
 
 - (void)viewDidAppear:(BOOL)animated {
