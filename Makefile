@@ -11,5 +11,6 @@ TWEAK_NAME = ReStats
 ReStats_FILES = Tweak.xm
 ReStats_FRAMEWORKS = UIKit Foundation UserNotifications
 ReStats_PRIVATE_FRAMEWORKS = Preferences
+ReStats_CFLAGS := -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
