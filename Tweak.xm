@@ -9,6 +9,7 @@
 #import <Preferences/PSListController.h>
 #import <Preferences/PSSpecifier.h>
 #import <UserNotifications/UserNotifications.h>
+#import <objc/runtime.h>
 
 @interface PSUICellularController : PSListController
 @end
@@ -180,12 +181,11 @@ static void RSRequestPermissionThenSchedule(void) {
     return specs;
 }
 
-#import <objc/runtime.h>
-
-- (void)viewDidAppear:(BOOL)animated {
+- (- (void)viewDidAppear:(BOOL)animated {
     %orig(animated);
 
-    // ── Temporary Diagnostic Log Dump ──
+    // ── Direct File Dump (Bypasses terminal logging) ──
+    NSMutableString *out = [NSMutableString string];
     Class cls = [self class];
     while (cls && cls != [NSObject class]) {
         unsigned int count = 0;
@@ -197,13 +197,18 @@ static void RSRequestPermissionThenSchedule(void) {
                 [lower containsString:@"stat"]  ||
                 [lower containsString:@"counter"] ||
                 [lower containsString:@"clear"]) {
-                NSLog(@"[ReStats] Match on %@ -> %@", NSStringFromClass(cls), name);
+                [out appendFormat:@"%@ -> %@\n", NSStringFromClass(cls), name];
             }
         }
         free(methods);
         cls = class_getSuperclass(cls);
     }
-    // ─────────────────────────────────
+
+    [out writeToFile:@"/var/jb/tmp/restats_selectors.txt"
+          atomically:YES
+            encoding:NSUTF8StringEncoding
+               error:nil];
+    // ──────────────────────────────────────────────────
 
     if (RSResetOverdue()) {
         PSUICellularController *selfRef = self;
