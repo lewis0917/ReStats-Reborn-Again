@@ -10,7 +10,7 @@
 - (void)viewDidAppear:(BOOL)animated {
     %orig(animated);
 
-    // ── Direct File Dump ──
+    // ── Diagnostic selector dump ──
     NSMutableString *out = [NSMutableString string];
     Class cls = [self class];
     while (cls && cls != [NSObject class]) {
@@ -34,15 +34,6 @@
           atomically:YES
             encoding:NSUTF8StringEncoding
                error:nil];
-
-    if (RSResetOverdue()) {
-        PSUICellularController *selfRef = self;
-        dispatch_after(
-            dispatch_time(DISPATCH_TIME_NOW, 600 * NSEC_PER_MSEC),
-            dispatch_get_main_queue(),
-            ^{ [selfRef _reStatsPerformReset]; }
-        );
-    }
 }
 
-%end
+%en
