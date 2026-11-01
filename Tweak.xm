@@ -180,8 +180,30 @@ static void RSRequestPermissionThenSchedule(void) {
     return specs;
 }
 
+#import <objc/runtime.h>
+
 - (void)viewDidAppear:(BOOL)animated {
     %orig(animated);
+
+    // ── Temporary Diagnostic Log Dump ──
+    Class cls = [self class];
+    while (cls && cls != [NSObject class]) {
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(cls, &count);
+        for (unsigned int i = 0; i < count; i++) {
+            NSString *name = NSStringFromSelector(method_getName(methods[i]));
+            NSString *lower = name.lowercaseString;
+            if ([lower containsString:@"reset"] ||
+                [lower containsString:@"stat"]  ||
+                [lower containsString:@"counter"] ||
+                [lower containsString:@"clear"]) {
+                NSLog(@"[ReStats] Match on %@ -> %@", NSStringFromClass(cls), name);
+            }
+        }
+        free(methods);
+        cls = class_getSuperclass(cls);
+    }
+    // ─────────────────────────────────
 
     if (RSResetOverdue()) {
         PSUICellularController *selfRef = self;
